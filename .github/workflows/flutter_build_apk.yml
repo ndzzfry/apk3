@@ -1,0 +1,79 @@
+name: NDIZZXD WEB2APK Builder
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        required: true
+        description: "Job ID"
+      zip_path:
+        required: false
+        description: "Path ZIP di repo"
+      zip_url:
+        required: false
+        description: "URL ZIP eksternal"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: "17"
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.24.0"
+          channel: stable
+          cache: true
+
+      - name: Download ZIP
+        run: |
+          mkdir -p project
+          if [ -n "${{ inputs.zip_path }}" ]; then
+            echo "Download dari repo: ${{ inputs.zip_path }}"
+            curl -L -o project.zip "https://raw.githubusercontent.com/${{ github.repository }}/main/${{ inputs.zip_path }}"
+          elif [ -n "${{ inputs.zip_url }}" ]; then
+            echo "Download dari URL: ${{ inputs.zip_url }}"
+            curl -L -o project.zip "${{ inputs.zip_url }}"
+          else
+            echo "Tidak ada zip_path atau zip_url"
+            exit 1
+          fi
+          unzip -o project.zip -d project
+
+      - name: Find Flutter Project
+        id: find
+        run: |
+          PUBSPEC=$(find project -name "pubspec.yaml" | head -1)
+          if [ -z "$PUBSPEC" ]; then
+            echo "pubspec.yaml tidak ditemukan"
+            exit 1
+          fi
+          DIR=$(dirname "$PUBSPEC")
+          echo "project_dir=$DIR" >> $GITHUB_OUTPUT
+
+      - name: Get Dependencies
+        run: |
+          cd "${{ steps.find.outputs.project_dir }}"
+          flutter pub get
+
+      - name: Build APK
+        run: |
+          cd "${{ steps.find.outputs.project_dir }}"
+          flutter build apk --release
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ndizzxd-apk-${{ inputs.job_id }}
+          path: ${{ steps.find.outputs.project_dir }}/build/app/outputs/flutter-apk/*.apk
+          retention-days: 7
